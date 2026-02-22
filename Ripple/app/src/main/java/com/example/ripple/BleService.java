@@ -25,10 +25,8 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.UUID;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -40,11 +38,8 @@ import android.content.Intent;
 public class BleService extends Service {
 
     private static final String TAG = "Ripple";
-    private final Set<String> recentPackets = new HashSet<>();
     public static final String SERVICE_UUID = "0000dead-0000-1000-8000-00805f9b34fb";
     private static final String CHANNEL_ID = "ripple_ble";
-    private String myDeviceAddress = null;
-
 
     private BluetoothLeAdvertiser advertiser;
     private BluetoothLeScanner scanner;
@@ -70,8 +65,6 @@ public class BleService extends Service {
         }
 
         BluetoothAdapter btAdapter = btManager.getAdapter();
-        myDeviceAddress = btAdapter.getAddress();
-        Log.d(TAG, "My MAC: " + myDeviceAddress);
         if (btAdapter == null || !btAdapter.isEnabled()) {
             Log.w(TAG, "Bluetooth not available or disabled");
             return;
@@ -118,11 +111,6 @@ public class BleService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP_ADVERTISING.equals(intent.getAction())) {
             if (advertiser != null) advertiser.stopAdvertising(advertiseCallback);
-            String packetId = intent.getStringExtra("packetId");
-            if (packetId != null) {
-                db.resolvePacket(packetId);
-                Log.d(TAG, "Stopped + resolved: " + packetId);
-            }
             return START_STICKY;
         }
         if (intent != null && intent.hasExtra("packetId")) {
@@ -209,27 +197,10 @@ public class BleService extends Service {
             SosPacket received = decodePacket(manufacturerData);
             if (received == null) return;
 
-            String stableId = "SOS_" + received.getSequenceNumber() + "_" +
-                    String.format("%d_%d", (int)(received.getLat()*1000), (int)(received.getLng()*1000));
-            received.setPacketId(stableId);
-
-            String senderMac = result.getDevice().getAddress();
-            if (myDeviceAddress != null && senderMac.equals(myDeviceAddress)) {
-                Log.d(TAG, "Ignoring self-advertisement");
-                return;
-            }
-
             Log.d(TAG, "Received SOS via BLE: " + received);
-
-            String key = received.getPacketId() + received.getSequenceNumber();
-            if (!recentPackets.add(key) || recentPackets.size() > 50) {
-                if (recentPackets.size() > 50) recentPackets.clear();
-                return;
-            }
 
             int delay = new Random().nextInt(500) + 100;
             new android.os.Handler(getMainLooper()).postDelayed(() -> {
-                if (db.getPacketById(received.getPacketId()) != null) return;
                 received.incrementHop();
                 db.upsertPacket(received);
                 Intent broadcast = new Intent("SOS_RECEIVED");
@@ -264,9 +235,6 @@ public class BleService extends Service {
             double lng   = buf.getInt() / 1e6;
             int seq      = buf.getShort() & 0xFFFF;
             int hops     = buf.get() & 0xFF;
-
-            String packetId = "SOS_" + seq + "_" + status + "_" +
-                    String.format("%d_%d", (int)(lat*1000), (int)(lng*1000));
 
             return new SosPacket(
                     UUID.randomUUID().toString(),

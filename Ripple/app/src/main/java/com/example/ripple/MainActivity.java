@@ -178,10 +178,6 @@ public class MainActivity extends AppCompatActivity {
         if (activePacketId != null) {
             Log.d("MainActivity", "Calling resolvePacket for: " + activePacketId);
             db.resolvePacket(activePacketId);
-            Intent stopIntent = new Intent(this, BleService.class);
-            stopIntent.setAction(BleService.ACTION_STOP_ADVERTISING);
-            stopIntent.putExtra("packetId", activePacketId);
-            startService(stopIntent);
             activePacketId = null;
             if (adapter != null) {
                 adapter.notifyDataSetChanged();
